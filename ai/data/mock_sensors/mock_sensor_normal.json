@@ -1,0 +1,12 @@
+{
+  "soil": {
+    "moisture_percent": 55.4,
+    "temperature_celsius": 22.1
+  },
+  "air": {
+    "temperature_celsius": 26.5,
+    "humidity_percent": 68.0,
+    "rainfall_mm": 0.0
+  },
+  "crop_stage": "flowering"
+}

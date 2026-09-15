@@ -1,0 +1,20 @@
+{
+  "upcoming_24h_rainfall_mm": 0.0,
+  "max_heat_index_c": 39.2,
+  "forecast_days": [
+    {
+      "day_offset": 1,
+      "expected_temp_max_c": 37.0,
+      "expected_temp_min_c": 24.0,
+      "expected_rainfall_mm": 0.0,
+      "expected_humidity_percent": 30.0
+    },
+    {
+      "day_offset": 2,
+      "expected_temp_max_c": 38.5,
+      "expected_temp_min_c": 25.0,
+      "expected_rainfall_mm": 0.0,
+      "expected_humidity_percent": 28.0
+    }
+  ]
+}

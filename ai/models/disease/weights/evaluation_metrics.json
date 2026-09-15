@@ -1,0 +1,9 @@
+{
+  "training_time_seconds": 550.29,
+  "epochs": 25,
+  "model_architecture": "yolov8n-cls",
+  "top1_accuracy": 0.7283,
+  "top5_accuracy": 1.0,
+  "save_dir": "C:\\Users\\maste\\.gemini\\antigravity\\scratch\\smart_spray_ai\\ai\\models\\disease\\runs\\baseline_cls",
+  "target_weights": "C:\\Users\\maste\\.gemini\\antigravity\\scratch\\smart_spray_ai\\ai\\models\\disease\\weights\\best.pt"
+}

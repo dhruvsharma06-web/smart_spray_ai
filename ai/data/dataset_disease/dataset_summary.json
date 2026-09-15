@@ -1,0 +1,32 @@
+{
+  "tomato_early_blight": {
+    "train": 60,
+    "val": 12,
+    "total": 72
+  },
+  "tomato_late_blight": {
+    "train": 75,
+    "val": 19,
+    "total": 94
+  },
+  "tomato_healthy": {
+    "train": 43,
+    "val": 10,
+    "total": 53
+  },
+  "potato_early_blight": {
+    "train": 79,
+    "val": 21,
+    "total": 100
+  },
+  "potato_late_blight": {
+    "train": 77,
+    "val": 19,
+    "total": 96
+  },
+  "potato_healthy": {
+    "train": 44,
+    "val": 11,
+    "total": 55
+  }
+}
