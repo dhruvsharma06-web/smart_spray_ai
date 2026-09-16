@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     genai_service_url: str = "http://localhost:8003"
     weather_provider: str = "mock"
     log_level: str = "INFO"
+    decision_ttl_seconds: int = 300
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()

@@ -13,6 +13,10 @@ def validate_command(device: Device, action: str, decision: dict | None = None):
         if decision.get("primary_decision") != "SPRAY": raise HTTPException(409, "Decision engine has not authorized spraying")
         if decision.get("requires_confirmation"): raise HTTPException(409, "Decision requires confirmation")
         if decision.get("risk_level") == "CRITICAL": raise HTTPException(409, "Critical risk blocks spraying")
+    if action == "irrigate":
+        if not decision: raise HTTPException(409, "Irrigation requires an approved decision")
+        if decision.get("primary_decision") != "IRRIGATE": raise HTTPException(409, "Decision engine has not authorized irrigation")
+        if decision.get("requires_confirmation"): raise HTTPException(409, "Decision requires confirmation")
     if action in {"spray", "irrigate"} and device.tank_level is not None and device.tank_level <= 5: raise HTTPException(409, "Tank level too low")
 
 def execute_local(db: Session, device: Device, action: str, decision_id: int | None = None):

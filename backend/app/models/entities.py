@@ -113,6 +113,7 @@ class Decision(Base):
     risk_level: Mapped[str] = mapped_column(String(30))
     result: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 class SprayEvent(Base):
     __tablename__ = "spray_events"
@@ -125,6 +126,7 @@ class SprayEvent(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    idempotency_key: Mapped[str | None] = mapped_column(String(100), unique=True, index=True, nullable=True)
 
 class Alert(Base):
     __tablename__ = "alerts"

@@ -7,4 +7,9 @@ class ExplainRequest(BaseModel):
     decision: dict
 router=APIRouter(prefix="/api/assistant",tags=["assistant"])
 @router.post("/explain")
-async def explain(payload:ExplainRequest,user=Depends(get_current_user)): return await GenAIService().explain(payload.analysis,payload.decision)
+async def explain(payload:ExplainRequest,user=Depends(get_current_user)):
+    genai = GenAIService()
+    try:
+        return await genai.explain(payload.analysis, payload.decision)
+    finally:
+        await genai.close()
