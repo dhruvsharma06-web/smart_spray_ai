@@ -1,6 +1,8 @@
 """
-FastAPI Endpoints for Person-1 SMART SPRAY AI Module.
-Exposes POST /ai/analyze endpoint consuming analyze_field() pipeline.
+FastAPI Endpoints for Person-1 AI Pipeline and Person-3 Decision Engine.
+Exposes:
+- POST /ai/analyze: Field analysis pipeline
+- POST /ai/decision: Decision Engine operational recommendation evaluation
 """
 
 from __future__ import annotations
@@ -11,17 +13,19 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
+from .decision.engine import evaluate_decision
+from .decision.schemas import DecisionResult
 from .inference.analyze_field import analyze_field
 from .schemas.pipeline import FieldAnalysisOutput
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="SMART SPRAY AI Microservice",
-    description="Person 1 AI/ML + GenAI Module for Crop Diagnosis and Field Analysis",
-    version="0.1.0",
+    title="SMART SPRAY AI & Decision Engine Microservice",
+    description="Person 1 AI/ML Diagnostics + Person 3 Decision Engine for Smart Spray",
+    version="0.2.0",
 )
 
 # Enable CORS for SIH prototype frontends / backend integration
@@ -32,6 +36,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class DecisionEvaluationRequest(BaseModel):
+    """Input payload for POST /ai/decision endpoint."""
+
+    field_analysis: Dict[str, Any]
+    sensor_data: Optional[Dict[str, Any]] = None
+    weather_data: Optional[Dict[str, Any]] = None
+    crop_stage: str = "vegetative"
 
 
 @app.get("/health", status_code=status.HTTP_200_OK)
@@ -132,4 +145,36 @@ async def analyze_field_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal AI processing error: {str(e)}",
+        )
+
+
+@app.post(
+    "/ai/decision",
+    response_model=DecisionResult,
+    status_code=status.HTTP_200_OK,
+    summary="Evaluate Person 3 Decision Engine operational recommendation",
+)
+def evaluate_decision_endpoint(payload: DecisionEvaluationRequest) -> DecisionResult:
+    """
+    Exposes Person 3 Decision Engine.
+
+    Accepts JSON body:
+    - field_analysis: Result payload from /ai/analyze or FieldAnalysisOutput
+    - sensor_data: Optional IoT telemetry dictionary
+    - weather_data: Optional weather forecast dictionary
+    - crop_stage: Crop growth stage string
+    """
+    try:
+        result = evaluate_decision(
+            field_analysis=payload.field_analysis,
+            sensor_data=payload.sensor_data,
+            weather_data=payload.weather_data,
+            crop_stage=payload.crop_stage,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Unhandled exception in Decision Engine evaluation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Decision Engine processing error: {str(e)}",
         )
