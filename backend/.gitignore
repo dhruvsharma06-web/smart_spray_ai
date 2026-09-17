@@ -1,0 +1,13 @@
+.env
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.venv/
+storage/images/*
+!storage/images/.gitkeep
+alembic/versions/*.pyc
+*.db
+*.db-shm
+*.db-wal
+smart_spray.db*
+

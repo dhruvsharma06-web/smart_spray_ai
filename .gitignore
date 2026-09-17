@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.db
+*.db-shm
+*.db-wal
+smart_spray.db*
+backend/storage/images/*
+!backend/storage/images/.gitkeep
