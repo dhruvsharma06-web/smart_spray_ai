@@ -49,7 +49,7 @@ class HistoryState {
 class HistoryStateNotifier extends Notifier<HistoryState> {
   @override
   HistoryState build() {
-    loadEvents();
+    Future.microtask(() => loadEvents());
     return const HistoryState();
   }
 
@@ -57,10 +57,16 @@ class HistoryStateNotifier extends Notifier<HistoryState> {
     state = state.copyWith(isLoading: true);
     try {
       final res = await ref.read(apiServiceProvider).get('${ApiConfig.spray}/history');
-      if (res.data != null && res.data['data'] != null) {
-        state = state.copyWith(events: res.data['data'], isLoading: false, error: null);
+      if (res.data != null) {
+        if (res.data is List) {
+          state = state.copyWith(events: res.data as List<dynamic>, isLoading: false, error: null);
+        } else if (res.data is Map && res.data['data'] is List) {
+          state = state.copyWith(events: res.data['data'] as List<dynamic>, isLoading: false, error: null);
+        } else {
+          state = state.copyWith(isLoading: false, error: "Invalid response");
+        }
       } else {
-        state = state.copyWith(isLoading: false, error: "Invalid response");
+        state = state.copyWith(isLoading: false, error: "Empty response");
       }
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());

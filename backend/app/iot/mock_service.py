@@ -145,6 +145,9 @@ class MockIoTService:
             "tank_level": state["tank_level"],
             "current_action": state["current_action"],
             "last_seen": state["last_seen"],
+            "pump_status": "on" if state["current_action"] in ("SPRAYING", "IRRIGATING") else "off",
+            "esp32_connected": not state["emergency_halted"],
+            "mode": "ASSISTED",
         }
 
 # Global singleton mock IoT service

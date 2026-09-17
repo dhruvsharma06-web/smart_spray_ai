@@ -16,8 +16,8 @@ class ApiService {
     return await _dio.get(path, queryParameters: queryParameters);
   }
 
-  Future<Response> post(String path, {dynamic data}) async {
-    return await _dio.post(path, data: data);
+  Future<Response> post(String path, {dynamic data, Map<String, dynamic>? queryParameters, Options? options}) async {
+    return await _dio.post(path, data: data, queryParameters: queryParameters, options: options);
   }
 
   // Handle common exceptions internally if necessary, or throw them to be caught by repositories.

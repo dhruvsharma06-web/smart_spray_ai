@@ -7,7 +7,7 @@ import 'package:dio/dio.dart';
 
 abstract class AiRepository {
   Future<Map<String, dynamic>> getAiStatus();
-  Future<Map<String, dynamic>> detect({File? imageFile});
+  Future<Map<String, dynamic>> detect({File? imageFile, String? demoScenario});
 }
 
 class AiRepositoryImpl implements AiRepository {
@@ -22,14 +22,32 @@ class AiRepositoryImpl implements AiRepository {
   }
 
   @override
-  Future<Map<String, dynamic>> detect({File? imageFile}) async {
-    dynamic data;
+  Future<Map<String, dynamic>> detect({File? imageFile, String? demoScenario}) async {
+    final Map<String, dynamic> formMap = {
+      'crop_type': 'Tomato',
+      'field_id': 'field-001',
+      'device_id': 'device-001',
+    };
     if (imageFile != null) {
-      data = FormData.fromMap({
-        'file': await MultipartFile.fromFile(imageFile.path),
-      });
+      formMap['file'] = await MultipartFile.fromFile(imageFile.path);
+    } else {
+      formMap['file'] = MultipartFile.fromBytes([0xFF, 0xD8, 0xFF, 0xE0], filename: 'leaf_scan.jpg');
     }
-    final response = await _api.post('${ApiConfig.ai}/detect', data: data);
+    final data = FormData.fromMap(formMap);
+
+    Options? options;
+    Map<String, dynamic>? queryParams;
+    if (demoScenario != null && demoScenario.isNotEmpty) {
+      options = Options(headers: {'X-Demo-Scenario': demoScenario});
+      queryParams = {'demo_scenario': demoScenario};
+    }
+
+    final response = await _api.post(
+      '${ApiConfig.ai}/detect',
+      data: data,
+      queryParameters: queryParams,
+      options: options,
+    );
     // The backend wraps every success payload in the standard {success, data}
     // envelope (see success_response). The detection payload —
     // {success, data, decision} — therefore arrives nested under `data`.

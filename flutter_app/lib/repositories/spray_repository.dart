@@ -3,7 +3,7 @@ import '../services/api_service.dart';
 import '../core/config/api_config.dart';
 
 abstract class SprayRepository {
-  Future<void> sprayManual(String deviceId, double duration);
+  Future<void> sprayManual(String deviceId, double duration, {String? decisionId});
   Future<void> stopSpray(String deviceId);
   Future<void> emergencyStop();
   Future<void> resetEmergencyStop();
@@ -15,13 +15,17 @@ class SprayRepositoryImpl implements SprayRepository {
   SprayRepositoryImpl(this._api);
 
   @override
-  Future<void> sprayManual(String deviceId, double duration) async {
+  Future<void> sprayManual(String deviceId, double duration, {String? decisionId}) async {
     try {
-      await _api.post('${ApiConfig.spray}/manual', data: {
+      final Map<String, dynamic> payload = {
         'device_id': deviceId,
         'duration_ms': (duration * 1000).toInt(),
         'command_id': DateTime.now().millisecondsSinceEpoch.toString(),
-      });
+      };
+      if (decisionId != null && decisionId.isNotEmpty) {
+        payload['decision_id'] = decisionId;
+      }
+      await _api.post('${ApiConfig.spray}/manual', data: payload);
     } catch (e) {
       rethrow;
     }
@@ -39,7 +43,7 @@ class SprayRepositoryImpl implements SprayRepository {
   @override
   Future<void> emergencyStop() async {
     try {
-      await _api.post('${ApiConfig.spray}/emergency-stop');
+      await _api.post('${ApiConfig.spray}/emergency-stop', data: {'device_id': 'device-001'});
     } catch (e) {
       rethrow;
     }
@@ -48,7 +52,7 @@ class SprayRepositoryImpl implements SprayRepository {
   @override
   Future<void> resetEmergencyStop() async {
     try {
-      await _api.post('${ApiConfig.spray}/reset-emergency-stop');
+      await _api.post('${ApiConfig.spray}/reset-emergency-stop', data: {'device_id': 'device-001'});
     } catch (e) {
       rethrow;
     }

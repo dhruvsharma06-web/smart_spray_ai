@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:camera/camera.dart';
@@ -15,6 +16,7 @@ class DetectionScreen extends ConsumerStatefulWidget {
 
 class _DetectionScreenState extends ConsumerState<DetectionScreen> {
   CameraController? _cameraController;
+  String? _selectedDemoScenario;
 
   @override
   void initState() {
@@ -57,13 +59,13 @@ class _DetectionScreenState extends ConsumerState<DetectionScreen> {
     if (_cameraController != null && _cameraController!.value.isInitialized) {
       try {
         final XFile file = await _cameraController!.takePicture();
-        notifier.startScan(imageFile: File(file.path));
+        notifier.startScan(imageFile: File(file.path), demoScenario: _selectedDemoScenario);
       } catch (e) {
         debugPrint('Failed to capture image: $e');
-        notifier.startScan(); // fallback
+        notifier.startScan(demoScenario: _selectedDemoScenario); // fallback
       }
     } else {
-      notifier.startScan(); // fallback
+      notifier.startScan(demoScenario: _selectedDemoScenario); // fallback
     }
   }
 
@@ -74,8 +76,54 @@ class _DetectionScreenState extends ConsumerState<DetectionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DETECT (ASSISTED)'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('DETECT (ASSISTED)'),
+            if (kDebugMode && _selectedDemoScenario != null)
+              Text(
+                'Demo: $_selectedDemoScenario',
+                style: const TextStyle(fontSize: 10, color: AppTheme.primaryLight),
+              ),
+          ],
+        ),
         actions: [
+          if (kDebugMode)
+            PopupMenuButton<String?>(
+              icon: const Icon(Icons.science_outlined),
+              tooltip: 'Demo Scenarios',
+              onSelected: (val) {
+                setState(() {
+                  _selectedDemoScenario = val;
+                });
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: null,
+                  child: Text('Live AI (Default)'),
+                ),
+                const PopupMenuItem(
+                  value: 'TOMATO_EARLY_BLIGHT',
+                  child: Text('TOMATO_EARLY_BLIGHT (Spray)'),
+                ),
+                const PopupMenuItem(
+                  value: 'DISEASE_HEAVY_RAIN',
+                  child: Text('DISEASE_HEAVY_RAIN (Delay)'),
+                ),
+                const PopupMenuItem(
+                  value: 'HEALTHY',
+                  child: Text('HEALTHY (Monitor)'),
+                ),
+                const PopupMenuItem(
+                  value: 'LOW_MOISTURE_HEAT',
+                  child: Text('LOW_MOISTURE_HEAT (Irrigate)'),
+                ),
+                const PopupMenuItem(
+                  value: 'LOW_CONFIDENCE',
+                  child: Text('LOW_CONFIDENCE (Warn)'),
+                ),
+              ],
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => notifier.reset(),

@@ -93,6 +93,9 @@ async def ensure_default_field_and_device(db: AsyncSession, field_id: str = "fie
         )
         db.add(d)
         await db.flush()
+    elif d and d.field_id != field_id:
+        d.field_id = field_id
+        await db.flush()
     await db.commit()
 
 # ==========================================

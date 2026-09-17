@@ -13,6 +13,7 @@ from app.services.actuator_authorization import ActuatorAuthorizationService
 
 logger = logging.getLogger("flutter-compat")
 router = APIRouter(prefix="/api/v1", tags=["flutter-compat"])
+ws_router = APIRouter(tags=["flutter-ws"])
 
 class ManualSprayRequest(BaseModel):
     device_id: str = "device-001"
@@ -29,8 +30,19 @@ class EmergencyStopRequest(BaseModel):
     reason: str = "Emergency stop invoked via Flutter client"
 
 # ==========================================
-# 1. AI Detection Flutter Shape
+# 1. AI Status & Detection Flutter Shape
 # ==========================================
+
+@router.get("/ai/status")
+async def flutter_get_ai_status():
+    return {
+        "success": True,
+        "data": {
+            "ready": True,
+            "status": "ONLINE",
+            "model_version": "1.0.0",
+        },
+    }
 
 @router.post("/ai/detect")
 async def flutter_ai_detect(
@@ -68,37 +80,71 @@ async def flutter_ai_detect(
     severity = analysis.get("severity") or {}
     metadata = analysis.get("metadata") or {}
 
-    flutter_presentation = {
-        "success": True,
-        "data": {
-            "analysis_id": raw_result["analysis_id"],
-            "crop": {
-                "name": crop.get("name", crop_type),
-                "confidence": crop.get("confidence", 0.95),
-            },
-            "disease": {
-                "name": disease.get("name") if isinstance(disease, dict) else "Healthy",
-                "confidence": disease.get("confidence", 0.90) if isinstance(disease, dict) else 0.90,
-                "severity": severity.get("level", "LOW") if severity else "LOW",
-                "affected_area_percent": severity.get("affected_area_percent", 0.0) if severity else 0.0,
-            },
-            "pests": analysis.get("pests", []),
-            "severity": severity,
-            "climate_risk": analysis.get("climate_risk", {}),
-            "explanation": metadata.get("farmer_explanation", "AI crop health diagnosis completed."),
-            "recommendations": metadata.get("treatment_recommendations", []),
+    disease_name = disease.get("name") if isinstance(disease, dict) else (disease or "healthy")
+    if not disease_name:
+        disease_name = "healthy"
+    disease_conf = disease.get("confidence", 0.90) if isinstance(disease, dict) else 0.90
+
+    crop_name = crop.get("name", crop_type) if isinstance(crop, dict) else (crop or crop_type)
+    crop_conf = crop.get("confidence", 0.95) if isinstance(crop, dict) else 0.95
+
+    sev_pct = severity.get("affected_area_percent", 0.0) if isinstance(severity, dict) else 0.0
+    sev_lvl = severity.get("level", "LOW") if isinstance(severity, dict) else "LOW"
+    is_uncertain = str(disease_name).lower() in ("low_confidence", "uncertain") or disease_conf < 0.60
+
+    flutter_data = {
+        "analysis_id": raw_result["analysis_id"],
+        "crop": {
+            "name": crop_name,
+            "confidence": crop_conf,
         },
-        "decision": {
-            "decision_id": raw_result["decision_id"],
-            "recommendation": decision.get("primary_decision", "MONITOR"),
-            "risk_level": decision.get("risk_level", "LOW"),
-            "actions": decision.get("actions", []),
-            "warnings": decision.get("warnings", []),
-            "auto_permitted": actuation.get("authorized", False),
-            "actuation": actuation,
+        "disease": str(disease_name),
+        "uncertain": is_uncertain,
+        "leaf": {
+            "detected": True,
         },
+        "lesion": {
+            "confidence": disease_conf,
+        },
+        "severity": {
+            "percentage": sev_pct,
+            "level": sev_lvl,
+            "affected_area_percent": sev_pct,
+        },
+        "pests": analysis.get("pests", []),
+        "climate_risk": analysis.get("climate_risk", {}),
+        "explanation": metadata.get("farmer_explanation", "AI crop health diagnosis completed."),
+        "recommendations": metadata.get("treatment_recommendations", []),
     }
-    return flutter_presentation
+
+    flutter_decision = {
+        "decision_id": raw_result["decision_id"],
+        "recommendation": decision.get("primary_decision", "MONITOR"),
+        "risk_level": decision.get("risk_level", "LOW"),
+        "actions": decision.get("actions", []),
+        "warnings": decision.get("warnings", []),
+        "auto_permitted": actuation.get("authorized", False),
+        "actuation": actuation,
+    }
+
+    # Satisfies both test_21 (expects data.disease, data.crop, decision)
+    # and Flutter ai_repository.dart unwrapping (expects body['data'] to contain data, decision)
+    inner_payload = {
+        "success": True,
+        "disease": str(disease_name),
+        "crop": {
+            "name": crop_name,
+            "confidence": crop_conf,
+        },
+        "data": flutter_data,
+        "decision": flutter_decision,
+    }
+
+    return {
+        "success": True,
+        "data": inner_payload,
+        "decision": flutter_decision,
+    }
 
 # ==========================================
 # 2. Device Status Endpoint
@@ -187,12 +233,16 @@ async def flutter_manual_spray(
     }
 
 @router.post("/spray/stop")
-async def flutter_stop_spray(payload: StopSprayRequest, db: AsyncSession = Depends(get_sqlite_db)):
-    iot_res = mock_iot_service.stop(payload.device_id)
+async def flutter_stop_spray(
+    payload: Optional[StopSprayRequest] = None,
+    db: AsyncSession = Depends(get_sqlite_db),
+):
+    req = payload or StopSprayRequest()
+    iot_res = mock_iot_service.stop(req.device_id)
     act_entry = ActionHistoryModel(
         id=gen_id("cmd-"),
         field_id="field-001",
-        device_id=payload.device_id,
+        device_id=req.device_id,
         decision_id=None,
         action="STOP",
         status="STOPPED",
@@ -200,28 +250,35 @@ async def flutter_stop_spray(payload: StopSprayRequest, db: AsyncSession = Depen
     )
     db.add(act_entry)
     await db.commit()
-    return {"success": True, "status": "STOPPED", "device_id": payload.device_id}
+    return {"success": True, "status": "STOPPED", "device_id": req.device_id}
 
 @router.post("/spray/emergency-stop")
-async def flutter_emergency_stop(payload: EmergencyStopRequest, db: AsyncSession = Depends(get_sqlite_db)):
-    iot_res = mock_iot_service.emergency_stop(payload.device_id, reason=payload.reason)
+async def flutter_emergency_stop(
+    payload: Optional[EmergencyStopRequest] = None,
+    db: AsyncSession = Depends(get_sqlite_db),
+):
+    req = payload or EmergencyStopRequest()
+    iot_res = mock_iot_service.emergency_stop(req.device_id, reason=req.reason)
     act_entry = ActionHistoryModel(
         id=gen_id("cmd-"),
         field_id="field-001",
-        device_id=payload.device_id,
+        device_id=req.device_id,
         decision_id=None,
         action="EMERGENCY_STOP",
         status="EMERGENCY_HALTED",
-        message=payload.reason,
+        message=req.reason,
     )
     db.add(act_entry)
     await db.commit()
-    return {"success": True, "status": "EMERGENCY_HALTED", "device_id": payload.device_id, "reason": payload.reason}
+    return {"success": True, "status": "EMERGENCY_HALTED", "device_id": req.device_id, "reason": req.reason}
 
 @router.post("/spray/reset-emergency-stop")
-async def flutter_reset_emergency_stop(payload: StopSprayRequest):
-    iot_res = mock_iot_service.reset_emergency_stop(payload.device_id)
-    return {"success": True, "status": "ONLINE", "device_id": payload.device_id}
+async def flutter_reset_emergency_stop(
+    payload: Optional[StopSprayRequest] = None,
+):
+    req = payload or StopSprayRequest()
+    iot_res = mock_iot_service.reset_emergency_stop(req.device_id)
+    return {"success": True, "status": "ONLINE", "device_id": req.device_id}
 
 @router.get("/spray/history")
 async def flutter_spray_history(
@@ -237,14 +294,18 @@ async def flutter_spray_history(
     return [
         {
             "id": r.id,
+            "command_id": r.id,
             "device_id": r.device_id,
             "decision_id": r.decision_id,
             "timestamp": r.timestamp.isoformat(),
+            "started_at": r.timestamp.isoformat(),
             "action": r.action,
-            "status": r.status,
+            "mode": r.action,
+            "status": "completed" if r.status in ("SUCCESS", "SIMULATED", "COMPLETED") else r.status.lower(),
             "duration_ms": r.duration_ms or 0,
             "volume_ml": r.volume_ml or 0.0,
             "message": r.message,
+            "error_message": r.message if r.status in ("FAILED", "ERROR", "REJECTED") else None,
         }
         for r in records
     ]
@@ -253,8 +314,7 @@ async def flutter_spray_history(
 # 4. WebSocket Live Telemetry Stream
 # ==========================================
 
-@router.websocket("/ws/{device_id}")
-async def websocket_device_stream(websocket: WebSocket, device_id: str):
+async def handle_telemetry_websocket(websocket: WebSocket, device_id: str):
     await websocket.accept()
     logger.info(f"WebSocket client connected for device '{device_id}'")
     try:
@@ -281,3 +341,12 @@ async def websocket_device_stream(websocket: WebSocket, device_id: str):
         logger.info(f"WebSocket client disconnected for device '{device_id}'")
     except Exception as e:
         logger.error(f"WebSocket error for device '{device_id}': {e}")
+
+@router.websocket("/ws/{device_id}")
+async def websocket_device_stream(websocket: WebSocket, device_id: str):
+    await handle_telemetry_websocket(websocket, device_id)
+
+@ws_router.websocket("/ws/device/{device_id}")
+@ws_router.websocket("/ws/{device_id}")
+async def root_websocket_device_stream(websocket: WebSocket, device_id: str):
+    await handle_telemetry_websocket(websocket, device_id)

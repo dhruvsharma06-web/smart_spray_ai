@@ -33,11 +33,12 @@ class DetectionStateNotifier extends Notifier<DetectionState> {
   @override
   DetectionState build() => const DetectionState();
 
-  void startScan({File? imageFile}) async {
+  void startScan({File? imageFile, String? demoScenario}) async {
     state = state.copyWith(status: DetectionStatus.scanning);
     try {
-      final res =
-          await ref.read(aiRepositoryProvider).detect(imageFile: imageFile);
+      final res = await ref
+          .read(aiRepositoryProvider)
+          .detect(imageFile: imageFile, demoScenario: demoScenario);
       if (res['success'] == true) {
         state =
             state.copyWith(status: DetectionStatus.resultReady, aiResult: res);
@@ -64,18 +65,24 @@ class DetectionStateNotifier extends Notifier<DetectionState> {
       return;
     }
 
+    final decisionId = decision['decision_id'] as String?;
+    if (decisionId == null || decisionId.isEmpty) {
+      state = state.copyWith(
+          status: DetectionStatus.error,
+          errorMessage: "No valid decision ID available for spray authorization.");
+      return;
+    }
+
     state = state.copyWith(status: DetectionStatus.spraying);
     try {
-      // Backend handles exact duration for recommendation levels, but we can pass a proxy or update endpoint
-      // Actually backend /api/v1/spray/manual takes duration_ms.
-      // If we are in ASSISTED mode, we shouldn't necessarily use manual spray, but the backend doesn't have an assisted spray endpoint!
-      // We will spray manually for 1000ms as a safe default demo!
-      await ref.read(sprayRepositoryProvider).sprayManual('device-001', 1.0);
+      await ref
+          .read(sprayRepositoryProvider)
+          .sprayManual('device-001', 1.0, decisionId: decisionId);
       await Future.delayed(const Duration(seconds: 2));
       state = const DetectionState(status: DetectionStatus.idle);
     } catch (e) {
       state = state.copyWith(
-          status: DetectionStatus.error, errorMessage: "Spray command failed.");
+          status: DetectionStatus.error, errorMessage: "Spray command failed: $e");
     }
   }
 

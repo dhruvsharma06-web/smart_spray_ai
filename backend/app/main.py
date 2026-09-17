@@ -58,6 +58,7 @@ def health():
 # Include Canonical Prototype and Flutter Compatibility Routers
 app.include_router(canonical.router)
 app.include_router(flutter_compat.router)
+app.include_router(flutter_compat.ws_router)
 
 # Include Enterprise Routers
 for r in [auth.router, farms.router, sensors.router, analysis.router, decision.router, devices.router, dashboard.router, assistant.router, alerts.router]:
