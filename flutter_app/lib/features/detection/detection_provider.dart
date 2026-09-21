@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../repositories/ai_repository.dart';
+import '../../repositories/spray_repository.dart';
 
 enum DetectionStatus {
   idle,
@@ -180,9 +181,41 @@ class DetectionStateNotifier extends Notifier<DetectionState> {
       clearError: true,
     );
 
-    // The actual actuator command is handled by the
-    // control/spray module. This state change keeps the
-    // detection screen API compatible.
+    final decision = state.aiResult?['decision'];
+    final decisionId = decision is Map ? decision['decision_id']?.toString() : null;
+
+    try {
+      final res = await ref.read(sprayRepositoryProvider).sprayManual(
+            'device-001',
+            5.0,
+            decisionId: decisionId,
+          );
+      final isQueued = res['status'] == 'QUEUED' || res['success'] == true;
+      if (isQueued) {
+        await Future.delayed(const Duration(seconds: 5));
+      }
+      state = state.copyWith(status: DetectionStatus.resultReady);
+    } on DioException catch (e) {
+      String msg = 'Spray action failed';
+      final responseData = e.response?.data;
+      if (responseData is Map) {
+        final detail = responseData['detail'];
+        if (detail is Map && detail['message'] != null) {
+          msg = detail['message'].toString();
+        } else if (detail != null) {
+          msg = detail.toString();
+        }
+      }
+      state = state.copyWith(
+        status: DetectionStatus.error,
+        errorMessage: msg,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        status: DetectionStatus.error,
+        errorMessage: 'Spray failed: $e',
+      );
+    }
   }
 
   void startSpraying() {

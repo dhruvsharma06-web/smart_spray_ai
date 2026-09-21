@@ -90,8 +90,7 @@ def test_04_get_device_status(client):
     data = res.json()
     assert data["device_id"] == "device-test-01"
     assert "status" in data
-    assert "battery" in data
-    assert "tank_level" in data
+    assert "esp32_connected" in data
 
 def test_05_get_field_latest(client):
     res = client.get("/fields/field-test-01/latest")
@@ -371,7 +370,7 @@ def test_22_flutter_device_status(client):
     data = res.json()
     assert data["device_id"] == "device-test-01"
     assert "status" in data
-    assert "tank_level" in data
+    assert "esp32_connected" in data
 
 def test_23_flutter_spray_controls_and_history(client):
     # Stop

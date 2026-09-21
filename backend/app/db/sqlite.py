@@ -96,12 +96,36 @@ class ActionHistoryModel(SQLiteBase):
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     volume_ml: Mapped[float | None] = mapped_column(Float, nullable=True)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    disease: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    plants_affected: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    plants_targeted: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    severity: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_context_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    ack_state: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+class NotificationModel(SQLiteBase):
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    device_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    field_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    type: Mapped[str] = mapped_column(String(64), index=True)
+    severity: Mapped[str] = mapped_column(String(30), default="INFO")
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(64), default="SYSTEM")
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    decision_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    action_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    stats_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 # Async SQLite Engine & Session
 sqlite_engine = create_async_engine(
     settings.database_url if "sqlite" in settings.database_url else "sqlite+aiosqlite:///./smart_spray.db",
     echo=False,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30.0},
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -113,6 +137,26 @@ AsyncSessionLocal = async_sessionmaker(
 async def init_sqlite_db() -> None:
     async with sqlite_engine.begin() as conn:
         await conn.run_sync(SQLiteBase.metadata.create_all)
+
+        def migrate_columns(sync_conn):
+            cursor = sync_conn.connection.cursor()
+            cursor.execute("PRAGMA table_info(action_history)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+
+            new_cols = [
+                ("disease", "VARCHAR(128)"),
+                ("plants_affected", "INTEGER"),
+                ("plants_targeted", "INTEGER"),
+                ("severity", "VARCHAR(30)"),
+                ("reason", "TEXT"),
+                ("ai_context_json", "JSON"),
+                ("ack_state", "VARCHAR(50)"),
+            ]
+            for col_name, col_type in new_cols:
+                if col_name not in existing_cols:
+                    cursor.execute(f"ALTER TABLE action_history ADD COLUMN {col_name} {col_type}")
+
+        await conn.run_sync(migrate_columns)
 
 async def get_sqlite_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:

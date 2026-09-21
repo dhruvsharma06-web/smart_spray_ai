@@ -3,10 +3,11 @@ import '../services/api_service.dart';
 import '../core/config/api_config.dart';
 
 abstract class SprayRepository {
-  Future<void> sprayManual(String deviceId, double duration, {String? decisionId});
-  Future<void> stopSpray(String deviceId);
-  Future<void> emergencyStop();
-  Future<void> resetEmergencyStop();
+  Future<Map<String, dynamic>> sprayManual(String deviceId, double duration, {String? decisionId});
+  Future<Map<String, dynamic>> irrigateManual(String deviceId, double duration, {String? decisionId});
+  Future<Map<String, dynamic>> stopSpray(String deviceId);
+  Future<Map<String, dynamic>> emergencyStop({String? deviceId});
+  Future<Map<String, dynamic>> resetEmergencyStop({String? deviceId});
 }
 
 class SprayRepositoryImpl implements SprayRepository {
@@ -15,7 +16,7 @@ class SprayRepositoryImpl implements SprayRepository {
   SprayRepositoryImpl(this._api);
 
   @override
-  Future<void> sprayManual(String deviceId, double duration, {String? decisionId}) async {
+  Future<Map<String, dynamic>> sprayManual(String deviceId, double duration, {String? decisionId}) async {
     try {
       final Map<String, dynamic> payload = {
         'device_id': deviceId,
@@ -25,34 +26,56 @@ class SprayRepositoryImpl implements SprayRepository {
       if (decisionId != null && decisionId.isNotEmpty) {
         payload['decision_id'] = decisionId;
       }
-      await _api.post('${ApiConfig.spray}/manual', data: payload);
+      final res = await _api.post('${ApiConfig.spray}/manual', data: payload);
+      return Map<String, dynamic>.from(res.data);
     } catch (e) {
       rethrow;
     }
   }
 
   @override
-  Future<void> stopSpray(String deviceId) async {
+  Future<Map<String, dynamic>> irrigateManual(String deviceId, double duration, {String? decisionId}) async {
     try {
-      await _api.post('${ApiConfig.spray}/stop', data: {'device_id': deviceId});
+      final Map<String, dynamic> payload = {
+        'device_id': deviceId,
+        'duration_ms': (duration * 1000).toInt(),
+        'command_id': DateTime.now().millisecondsSinceEpoch.toString(),
+      };
+      if (decisionId != null && decisionId.isNotEmpty) {
+        payload['decision_id'] = decisionId;
+      }
+      final res = await _api.post('${ApiConfig.spray}/irrigate', data: payload);
+      return Map<String, dynamic>.from(res.data);
     } catch (e) {
       rethrow;
     }
   }
 
   @override
-  Future<void> emergencyStop() async {
+  Future<Map<String, dynamic>> stopSpray(String deviceId) async {
     try {
-      await _api.post('${ApiConfig.spray}/emergency-stop', data: {'device_id': 'device-001'});
+      final res = await _api.post('${ApiConfig.spray}/stop', data: {'device_id': deviceId});
+      return Map<String, dynamic>.from(res.data);
     } catch (e) {
       rethrow;
     }
   }
 
   @override
-  Future<void> resetEmergencyStop() async {
+  Future<Map<String, dynamic>> emergencyStop({String? deviceId}) async {
     try {
-      await _api.post('${ApiConfig.spray}/reset-emergency-stop', data: {'device_id': 'device-001'});
+      final res = await _api.post('${ApiConfig.spray}/emergency-stop', data: {'device_id': deviceId ?? 'device-001'});
+      return Map<String, dynamic>.from(res.data);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> resetEmergencyStop({String? deviceId}) async {
+    try {
+      final res = await _api.post('${ApiConfig.spray}/reset-emergency-stop', data: {'device_id': deviceId ?? 'device-001'});
+      return Map<String, dynamic>.from(res.data);
     } catch (e) {
       rethrow;
     }

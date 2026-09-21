@@ -1,10 +1,10 @@
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.sqlite import DecisionModel, DeviceModel, FieldModel
+from app.db.sqlite import DecisionModel, DeviceModel, FieldModel, gen_id
 
 logger = logging.getLogger("actuator-authorization")
 
@@ -26,6 +26,59 @@ class ActuatorAuthorizationService:
     """
 
     @classmethod
+    async def create_manual_operator_decision(
+        cls,
+        db: AsyncSession,
+        device_id: str,
+        action: str,
+        duration_ms: int = 5000,
+        ttl_seconds: int = 60,
+    ) -> DecisionModel:
+        """
+        Creates a legitimate, short-lived MANUAL_OPERATOR decision record tied to device_id and its field.
+        """
+        normalized_action = action.strip().upper()
+        if normalized_action not in ("SPRAY", "IRRIGATE"):
+            raise ValueError(f"Operational actuation only supports SPRAY or IRRIGATE. Action '{normalized_action}' is invalid.")
+
+        dev_stmt = select(DeviceModel).where(DeviceModel.id == device_id)
+        dev_res = await db.execute(dev_stmt)
+        device = dev_res.scalar_one_or_none()
+        field_id = device.field_id if device else "field-001"
+
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(seconds=ttl_seconds)
+
+        decision = DecisionModel(
+            id=gen_id("dec-op-"),
+            analysis_id=None,
+            field_id=field_id,
+            timestamp=now,
+            primary_decision=normalized_action,
+            risk_level="LOW",
+            actions_json=[{
+                "action": normalized_action,
+                "target": device_id,
+                "source": "MANUAL_OPERATOR",
+                "duration_ms": duration_ms,
+            }],
+            warnings_json=[],
+            requires_confirmation=False,
+            raw_decision_json={
+                "source": "MANUAL_OPERATOR",
+                "device_id": device_id,
+                "action": normalized_action,
+                "duration_ms": duration_ms,
+                "authorized_by": "operator",
+            },
+            expires_at=expires_at,
+        )
+        db.add(decision)
+        await db.flush()
+        logger.info(f"[MANUAL OPERATOR] Created short-lived decision '{decision.id}' for '{device_id}' ({normalized_action}, TTL={ttl_seconds}s)")
+        return decision
+
+    @classmethod
     async def authorize_action(
         cls,
         db: AsyncSession,
@@ -33,6 +86,8 @@ class ActuatorAuthorizationService:
         action: str,
         decision_id: Optional[str] = None,
         preloaded_decision: Optional[Dict[str, Any]] = None,
+        duration_ms: Optional[int] = None,
+        require_device_online: bool = True,
     ) -> ActuatorAuthorizationResult:
         normalized_action = action.strip().upper()
         
@@ -179,7 +234,80 @@ class ActuatorAuthorizationService:
                     primary_decision=dec_primary,
                 )
 
-        # 8. All safety checks passed!
+        # 8. Maximum duration check (Hard safety cap: 30 seconds)
+        if duration_ms is not None and duration_ms > 30000:
+            msg = f"Requested duration {duration_ms}ms exceeds maximum safety limit (30000ms)."
+            logger.warning(f"[SAFETY GATE REJECT] {msg}")
+            return ActuatorAuthorizationResult(
+                authorized=False,
+                reason=msg,
+                action=normalized_action,
+                decision_id=dec_id,
+                device_id=device_id,
+                field_id=device.field_id,
+                primary_decision=dec_primary,
+            )
+
+        # 9. Emergency-Stop State Check
+        from app.iot.esp32_service import esp32_service, TELEMETRY_TIMEOUT_SECONDS
+        dev_state = esp32_service._get_or_init_state(device_id)
+        if dev_state.get("emergency_halted"):
+            msg = f"Device '{device_id}' is in EMERGENCY_HALTED state. Actuation prohibited."
+            logger.warning(f"[SAFETY GATE REJECT] {msg}")
+            return ActuatorAuthorizationResult(
+                authorized=False,
+                reason=msg,
+                action=normalized_action,
+                decision_id=dec_id,
+                device_id=device_id,
+                field_id=device.field_id,
+                primary_decision=dec_primary,
+            )
+
+        # 10. No Simultaneous Pump Protection
+        current_action = dev_state.get("current_action", "IDLE")
+        if normalized_action == "SPRAY" and current_action == "IRRIGATING":
+            msg = f"Device '{device_id}' is currently IRRIGATING. Cannot actuate SPRAY simultaneously."
+            logger.warning(f"[SAFETY GATE REJECT] {msg}")
+            return ActuatorAuthorizationResult(
+                authorized=False,
+                reason=msg,
+                action=normalized_action,
+                decision_id=dec_id,
+                device_id=device_id,
+                field_id=device.field_id,
+                primary_decision=dec_primary,
+            )
+        elif normalized_action == "IRRIGATE" and current_action == "SPRAYING":
+            msg = f"Device '{device_id}' is currently SPRAYING. Cannot actuate IRRIGATE simultaneously."
+            logger.warning(f"[SAFETY GATE REJECT] {msg}")
+            return ActuatorAuthorizationResult(
+                authorized=False,
+                reason=msg,
+                action=normalized_action,
+                decision_id=dec_id,
+                device_id=device_id,
+                field_id=device.field_id,
+                primary_decision=dec_primary,
+            )
+
+        # 11. Device Online State & Telemetry Freshness Check
+        if require_device_online:
+            status_obj = esp32_service.get_status(device_id)
+            if not status_obj.get("esp32_connected", False):
+                msg = f"Target device '{device_id}' is offline or telemetry is stale (> {TELEMETRY_TIMEOUT_SECONDS}s). Actuation prohibited."
+                logger.warning(f"[SAFETY GATE REJECT] {msg}")
+                return ActuatorAuthorizationResult(
+                    authorized=False,
+                    reason=msg,
+                    action=normalized_action,
+                    decision_id=dec_id,
+                    device_id=device_id,
+                    field_id=device.field_id,
+                    primary_decision=dec_primary,
+                )
+
+        # 12. All safety checks passed!
         logger.info(
             f"[SAFETY GATE APPROVED] Action '{normalized_action}' authorized for device '{device_id}' (decision: {dec_id}, primary: {dec_primary})"
         )

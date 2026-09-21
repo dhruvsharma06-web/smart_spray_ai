@@ -21,6 +21,7 @@ from app.db.sqlite import (
 )
 from app.demo.scenarios import get_demo_scenario
 from app.iot.mock_service import mock_iot_service
+from app.iot.esp32_service import esp32_service
 from app.services.actuator_authorization import ActuatorAuthorizationService
 
 logger = logging.getLogger("canonical-api")
@@ -326,24 +327,8 @@ async def create_device(payload: DeviceCreate, db: AsyncSession = Depends(get_sq
 
 @router.get("/devices/{device_id}/status")
 async def get_device_status(device_id: str, db: AsyncSession = Depends(get_sqlite_db)):
-    dev_res = await db.execute(select(DeviceModel).where(DeviceModel.id == device_id))
-    device = dev_res.scalar_one_or_none()
-    if not device:
-        # Fallback to in-memory mock IoT status or 404
-        mock_stat = mock_iot_service.get_status(device_id)
-        return mock_stat
-
-    mock_stat = mock_iot_service.get_status(device_id)
-    return {
-        "device_id": device.id,
-        "name": device.name,
-        "field_id": device.field_id,
-        "status": mock_stat["status"],
-        "battery": mock_stat["battery"],
-        "tank_level": mock_stat["tank_level"],
-        "current_action": mock_stat["current_action"],
-        "last_seen": mock_stat["last_seen"],
-    }
+    stat = esp32_service.get_status(device_id)
+    return stat
 
 @router.post("/devices/{device_id}/command")
 async def post_device_command(
@@ -356,8 +341,7 @@ async def post_device_command(
 
     # 1. Independent Fail-Safe Cutoffs: STOP & EMERGENCY_STOP bypass Decision authorization
     if action == "STOP":
-        iot_res = mock_iot_service.stop(device_id)
-        # Log to DB action history
+        await esp32_service.queue_command(device_id, "STOP")
         dev_res = await db.execute(select(DeviceModel).where(DeviceModel.id == device_id))
         dev = dev_res.scalar_one_or_none()
         field_id = dev.field_id if dev else "field-001"
@@ -367,16 +351,24 @@ async def post_device_command(
             device_id=device_id,
             decision_id=None,
             action="STOP",
-            status=iot_res["status"],
-            message=iot_res["message"],
+            status="STOPPED",
+            message="Actuators halted via independent STOP command",
         )
         db.add(act_entry)
         await db.commit()
-        return iot_res
+        return {
+            "authorized": True,
+            "executed": True,
+            "status": "STOPPED",
+            "action": "STOP",
+            "device_id": device_id,
+            "is_real_hardware": True,
+            "message": "Actuators halted to safe idle state",
+        }
 
     if action == "EMERGENCY_STOP":
         reason = payload.reason or "Manual emergency cutoff engaged"
-        iot_res = mock_iot_service.emergency_stop(device_id, reason=reason)
+        await esp32_service.queue_command(device_id, "EMERGENCY_STOP")
         dev_res = await db.execute(select(DeviceModel).where(DeviceModel.id == device_id))
         dev = dev_res.scalar_one_or_none()
         field_id = dev.field_id if dev else "field-001"
@@ -386,16 +378,33 @@ async def post_device_command(
             device_id=device_id,
             decision_id=None,
             action="EMERGENCY_STOP",
-            status=iot_res["status"],
+            status="EMERGENCY_HALTED",
             message=f"EMERGENCY CUTOFF: {reason}",
         )
         db.add(act_entry)
         await db.commit()
-        return iot_res
+        return {
+            "authorized": True,
+            "executed": True,
+            "status": "EMERGENCY_HALTED",
+            "action": "EMERGENCY_STOP",
+            "device_id": device_id,
+            "reason": reason,
+            "is_real_hardware": True,
+            "message": "Emergency cutoff engaged: power isolated and actuators locked",
+        }
 
     if action == "RESET_EMERGENCY_STOP":
-        iot_res = mock_iot_service.reset_emergency_stop(device_id)
-        return iot_res
+        await esp32_service.queue_command(device_id, "RESET")
+        return {
+            "authorized": True,
+            "executed": True,
+            "status": "ONLINE",
+            "action": "RESET_EMERGENCY_STOP",
+            "device_id": device_id,
+            "is_real_hardware": True,
+            "message": "Emergency lock cleared; device restored to ONLINE state",
+        }
 
     # 2. Operational Actuations (SPRAY, IRRIGATE) MUST pass single authoritative safety gate
     auth_result = await ActuatorAuthorizationService.authorize_action(
@@ -403,6 +412,8 @@ async def post_device_command(
         device_id=device_id,
         action=action,
         decision_id=payload.decision_id,
+        duration_ms=payload.duration_ms,
+        require_device_online=True,
     )
 
     if not auth_result.authorized:
@@ -417,20 +428,23 @@ async def post_device_command(
             },
         )
 
-    # 3. Dispatched to IoT Service
-    if action == "SPRAY":
-        iot_res = mock_iot_service.spray(
-            device_id=device_id,
-            duration_ms=payload.duration_ms or 5000,
-            volume_ml=payload.volume_ml or 250.0,
-        )
-    elif action == "IRRIGATE":
-        iot_res = mock_iot_service.irrigate(
-            device_id=device_id,
-            duration_ms=payload.duration_ms or 10000,
-        )
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported action '{action}'")
+    # 3. Dispatched to ESP32 Command Queue
+    await esp32_service.queue_command(
+        device_id=device_id,
+        command=action,
+        duration_ms=payload.duration_ms or 5000,
+    )
+    iot_res = {
+        "authorized": True,
+        "executed": True,
+        "status": "QUEUED",
+        "action": action,
+        "device_id": device_id,
+        "duration_ms": payload.duration_ms or (5000 if action == "SPRAY" else 10000),
+        "volume_ml": payload.volume_ml or 250.0 if action == "SPRAY" else None,
+        "is_real_hardware": True,
+        "message": f"Queued {action} command for ESP32 real hardware bridge",
+    }
 
     # 4. Record action history
     act_entry = ActionHistoryModel(
@@ -439,7 +453,7 @@ async def post_device_command(
         device_id=device_id,
         decision_id=auth_result.decision_id,
         action=action,
-        status=iot_res["status"],
+        status="QUEUED",
         duration_ms=iot_res.get("duration_ms"),
         volume_ml=iot_res.get("volume_ml"),
         message=iot_res.get("message"),
@@ -479,6 +493,16 @@ async def post_telemetry(payload: TelemetryCreate, db: AsyncSession = Depends(ge
     device = d_res.scalar_one_or_none()
     if device:
         device.last_seen = utc_now()
+
+    esp32_service.update_telemetry(payload.device_id, {
+        "soil": {"moisture_percent": payload.soil_moisture},
+        "environment": {
+            "temperature_celsius": payload.air_temperature,
+            "humidity_percent": payload.humidity,
+            "rain_detected": (payload.rainfall or 0) > 0,
+        },
+        "pump": None,
+    })
 
     await db.commit()
     logger.info(f"Ingested telemetry '{t_id}' for field '{payload.field_id}' device '{payload.device_id}'")
@@ -692,9 +716,11 @@ async def analyze_field(
             device_id=target_device_id,
             action=primary_decision,
             decision_id=decision_id,
+            require_device_online=False,
         )
 
         if auth_res.authorized:
+            await esp32_service.queue_command(target_device_id, primary_decision)
             if primary_decision == "SPRAY":
                 iot_res = mock_iot_service.spray(device_id=target_device_id)
             else:

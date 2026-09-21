@@ -141,12 +141,11 @@ class MockIoTService:
         return {
             "device_id": device_id,
             "status": state["status"],
-            "battery": state["battery"],
-            "tank_level": state["tank_level"],
             "current_action": state["current_action"],
             "last_seen": state["last_seen"],
             "pump_status": "on" if state["current_action"] in ("SPRAYING", "IRRIGATING") else "off",
-            "esp32_connected": not state["emergency_halted"],
+            "esp32_connected": False,  # Mock IoT must NOT report real hardware as connected
+            "is_mock": True,
             "mode": "ASSISTED",
         }
 

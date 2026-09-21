@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     decision_ttl_seconds: int = 300
     demo_mode: bool = True
     demo_default_scenario: str = "TOMATO_EARLY_BLIGHT"
+    esp32_base_url: str = "http://192.168.1.50"
     cors_origins: list[str] = ["*"]
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

@@ -4,6 +4,7 @@ import '../features/home/home_screen.dart';
 import '../features/detection/detection_screen.dart';
 import '../features/control/control_screen.dart';
 import '../features/history/history_screen.dart';
+import '../features/notifications/notifications_screen.dart';
 import '../widgets/main_scaffold.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -12,6 +13,11 @@ final router = GoRouter(
   navigatorKey: _rootNavigatorKey,
   initialLocation: '/home',
   routes: [
+    GoRoute(
+      path: '/notifications',
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const NotificationsScreen(),
+    ),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         return MainScaffold(navigationShell: navigationShell);

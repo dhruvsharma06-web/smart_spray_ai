@@ -15,4 +15,5 @@ class ApiConfig {
   static const String spray = '/spray';
   static const String ai = '/ai';
   static const String statistics = '/statistics';
+  static const String notifications = '/notifications';
 }

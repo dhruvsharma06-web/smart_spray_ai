@@ -11,6 +11,8 @@ class ControlScreen extends ConsumerWidget {
     final state = ref.watch(controlStateProvider);
     final notifier = ref.read(controlStateProvider.notifier);
 
+    final isBusy = state.isSpraying || state.isIrrigating;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('MANUAL CONTROL'),
@@ -30,7 +32,7 @@ class ControlScreen extends ConsumerWidget {
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'MANUAL MODE: Direct hardware control. Use with caution.',
+                        'MANUAL MODE: Direct ESP32 hardware bridge control. Safety authorization active.',
                         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -38,9 +40,53 @@ class ControlScreen extends ConsumerWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
-            if (state.isEmergencyStopped)
+            if (state.statusMessage != null) ...[
+              Card(
+                color: state.isQueued ? Colors.blue.shade700 : AppTheme.success,
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    children: [
+                      Icon(state.isQueued ? Icons.schedule : Icons.check_circle, color: Colors.white),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          state.statusMessage!,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (state.errorMessage != null) ...[
+              Card(
+                color: AppTheme.emergency,
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.white),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          state.errorMessage!,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (state.isEmergencyStopped) ...[
               Card(
                 color: AppTheme.emergency,
                 child: Padding(
@@ -51,73 +97,107 @@ class ControlScreen extends ConsumerWidget {
                         'EMERGENCY STOPPED',
                         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
                       ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'All pumps isolated. Actuators locked until reset.',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
                       const SizedBox(height: 16),
-                      ElevatedButton(
+                      ElevatedButton.icon(
                         onPressed: () => notifier.resetEmergencyStop(),
+                        icon: const Icon(Icons.restart_alt),
                         style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: AppTheme.emergency),
-                        child: const Text('RESET SYSTEM'),
+                        label: const Text('RESET SYSTEM'),
                       )
                     ],
                   ),
                 ),
               ),
-
-            const SizedBox(height: 24),
-
-
-
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
+            ],
 
             _buildControlSection(
-              title: 'Spray Duration: ${state.sprayDuration.toStringAsFixed(1)}s',
+              title: 'Spray Pump Duration: ${state.sprayDuration.toStringAsFixed(1)}s',
               child: Slider(
                 value: state.sprayDuration,
-                min: 0.1,
-                max: 3.0,
+                min: 1.0,
+                max: 30.0,
                 divisions: 29,
                 label: '${state.sprayDuration.toStringAsFixed(1)}s',
-                onChanged: state.isEmergencyStopped || state.isSpraying ? null : (v) => notifier.setSprayDuration(v),
+                onChanged: state.isEmergencyStopped || isBusy ? null : (v) => notifier.setSprayDuration(v),
               ),
             ),
-
-            const SizedBox(height: 48),
+            const SizedBox(height: 12),
 
             Row(
               children: [
                 Expanded(
-                  child: ElevatedButton(
-                    onPressed: (state.isEmergencyStopped || state.isSpraying) ? null : () => notifier.startSpray(),
+                  child: ElevatedButton.icon(
+                    onPressed: (state.isEmergencyStopped || isBusy) ? null : () => notifier.startSpray(),
+                    icon: const Icon(Icons.water_drop),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.moderate,
-                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
-                    child: Text(state.isSpraying ? 'SPRAYING...' : 'SPRAY'),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: state.isSpraying ? () => notifier.stopSpray() : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.offline,
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                    ),
-                    child: const Text('STOP'),
+                    label: Text(state.isSpraying ? (state.isQueued ? 'QUEUED...' : 'SPRAYING...') : 'SPRAY PUMP'),
                   ),
                 ),
               ],
             ),
 
-            const SizedBox(height: 48),
+            const Divider(height: 48),
+
+            _buildControlSection(
+              title: 'Irrigation Solenoid Duration: ${state.irrigationDuration.toStringAsFixed(1)}s',
+              child: Slider(
+                value: state.irrigationDuration,
+                min: 1.0,
+                max: 30.0,
+                divisions: 29,
+                label: '${state.irrigationDuration.toStringAsFixed(1)}s',
+                onChanged: state.isEmergencyStopped || isBusy ? null : (v) => notifier.setIrrigationDuration(v),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: (state.isEmergencyStopped || isBusy) ? null : () => notifier.startIrrigation(),
+                    icon: const Icon(Icons.grass),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    label: Text(state.isIrrigating ? (state.isQueued ? 'QUEUED...' : 'IRRIGATING...') : 'IRRIGATE PUMP'),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            ElevatedButton.icon(
+              onPressed: isBusy ? () => notifier.stopSpray() : null,
+              icon: const Icon(Icons.stop_circle_outlined),
+              label: const Text('STOP ALL ACTUATORS'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.offline,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+            ),
+
+            const SizedBox(height: 32),
 
             ElevatedButton.icon(
               onPressed: state.isEmergencyStopped ? null : () => notifier.emergencyStop(),
               icon: const Icon(Icons.dangerous),
-              label: const Text('EMERGENCY STOP'),
+              label: const Text('EMERGENCY CUTOFF'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.emergency,
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
           ],

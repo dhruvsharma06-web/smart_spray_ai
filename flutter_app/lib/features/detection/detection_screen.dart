@@ -197,51 +197,215 @@ class _DetectionScreenState extends ConsumerState<DetectionScreen> {
           ));
     }
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (leaf != null && leaf['detected'] == true)
-              const _StatusRow(
-                  icon: Icons.spa, text: 'Leaf detected', color: Colors.blue),
-            const Divider(),
-            if (disease != 'healthy') ...[
-              Text('Disease: ${disease.replaceAll("_", " ")}',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16)),
-              if (lesion != null && lesion['confidence'] != null)
+    final climateRisk = data['climate_risk'] is Map ? data['climate_risk'] as Map : {};
+    final rainRisk = (climateRisk['rain'] ?? climateRisk['heavy_rain']) as num?;
+    final heatRisk = climateRisk['heat'] as num?;
+    final explanation = data['explanation'] as String?;
+    final recommendations = data['recommendations'] is List ? data['recommendations'] as List : [];
+    final autoPermitted = decision['auto_permitted'] == true;
+    final warnings = decision['warnings'] is List ? decision['warnings'] as List : [];
+
+    return Column(
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (leaf != null && leaf['detected'] == true)
+                  const _StatusRow(
+                      icon: Icons.spa, text: 'Leaf detected', color: Colors.blue),
+                const Divider(),
+                if (disease != 'healthy') ...[
+                  Text('Disease: ${disease.replaceAll("_", " ")}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16)),
+                  if (lesion != null && lesion['confidence'] != null)
+                    Text(
+                        'Confidence: ${(lesion['confidence'] * 100).toStringAsFixed(1)}%'),
+                ] else ...[
+                  const Text('Healthy Plant',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: AppTheme.success)),
+                ],
+                if (severity != null) ...[
+                  const Divider(),
+                  Text(
+                      'Severity: ${severity['percentage']?.toStringAsFixed(1) ?? '0'}%',
+                      style: const TextStyle(
+                          color: AppTheme.moderate, fontWeight: FontWeight.bold)),
+                  Text('Severity Level: ${severity['level']}',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                ],
+                const Divider(),
                 Text(
-                    'Confidence: ${(lesion['confidence'] * 100).toStringAsFixed(1)}%'),
-            ] else ...[
-              const Text('Healthy Plant',
+                  'Recommended: ${decision['recommendation']}',
                   style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: AppTheme.success)),
-            ],
-            if (severity != null) ...[
-              const Divider(),
-              Text(
-                  'Severity: ${severity['percentage']?.toStringAsFixed(1) ?? '0'}%',
-                  style: const TextStyle(
-                      color: AppTheme.moderate, fontWeight: FontWeight.bold)),
-              Text('Severity Level: ${severity['level']}',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-            ],
-            const Divider(),
-            Text(
-              'Recommended: ${decision['recommendation']}',
-              style: TextStyle(
-                  color: decision['recommendation'] == 'NO_SPRAY'
-                      ? AppTheme.text
-                      : AppTheme.emergency,
-                  fontWeight: FontWeight.bold),
+                      color: decision['recommendation'] == 'NO_SPRAY'
+                          ? AppTheme.text
+                          : AppTheme.emergency,
+                      fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(height: 12),
+        // WHY THIS ACTION? Explanation Card
+        Card(
+          color: Colors.blueGrey.shade50,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: Colors.blueGrey.shade200),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.psychology_alt_outlined, color: Colors.blueGrey.shade800, size: 22),
+                    const SizedBox(width: 8),
+                    Text(
+                      'WHY THIS ACTION?',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.blueGrey.shade900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Decision & Risk Level
+                Row(
+                  children: [
+                    Text('Decision: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryLight,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        decision['recommendation'] ?? 'MONITOR',
+                        style: const TextStyle(color: AppTheme.primaryDark, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text('Risk: ', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800)),
+                    Text(
+                      decision['risk_level'] ?? 'LOW',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: decision['risk_level'] == 'HIGH' ? AppTheme.emergency : Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Safety Gate Status
+                Row(
+                  children: [
+                    Icon(
+                      autoPermitted ? Icons.check_circle_outline : Icons.shield_outlined,
+                      size: 16,
+                      color: autoPermitted ? AppTheme.success : AppTheme.warning,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      autoPermitted ? 'Safety Gate: Authorized' : 'Safety Gate: Review / Not Permitted',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: autoPermitted ? AppTheme.success : AppTheme.warning,
+                      ),
+                    ),
+                  ],
+                ),
+                // Climate factors if evaluated
+                if (rainRisk != null || heatRisk != null) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      if (rainRisk != null)
+                        Text(
+                          'Rain Risk: ${(rainRisk * 100).toStringAsFixed(0)}%',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: rainRisk >= 0.65 ? AppTheme.warning : Colors.grey.shade700,
+                            fontWeight: rainRisk >= 0.65 ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      if (heatRisk != null)
+                        Text(
+                          'Heat Risk: ${(heatRisk * 100).toStringAsFixed(0)}%',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: heatRisk >= 0.7 ? AppTheme.emergency : Colors.grey.shade700,
+                            fontWeight: heatRisk >= 0.7 ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+                // Farmer Explanation
+                if (explanation != null && explanation.isNotEmpty) ...[
+                  const Divider(height: 16),
+                  Text(
+                    explanation,
+                    style: const TextStyle(fontSize: 13, height: 1.4, color: Colors.black87),
+                  ),
+                ],
+                // Warnings if any
+                if (warnings.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ...warnings.map((w) => Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, size: 14, color: AppTheme.warning),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            w.toString(),
+                            style: const TextStyle(fontSize: 11, color: AppTheme.warning, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )),
+                ],
+                // Treatment Recommendations
+                if (recommendations.isNotEmpty) ...[
+                  const Divider(height: 16),
+                  Text('Recommendations:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800)),
+                  const SizedBox(height: 4),
+                  ...recommendations.map((r) => Padding(
+                    padding: const EdgeInsets.only(left: 4, top: 2),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('• ', style: TextStyle(fontSize: 12)),
+                        Expanded(child: Text(r.toString(), style: const TextStyle(fontSize: 12))),
+                      ],
+                    ),
+                  )),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
